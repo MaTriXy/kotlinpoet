@@ -18,7 +18,7 @@ package com.squareup.kotlinpoet
 import com.google.common.truth.Truth.assertThat
 import com.google.testing.compile.CompilationRule
 import org.junit.Rule
-import org.junit.Test
+import kotlin.test.Test
 import java.lang.annotation.Inherited
 import kotlin.reflect.KClass
 
@@ -283,6 +283,18 @@ class AnnotationSpecTest {
 
     assertThat(annotation.toString()).isEqualTo("" +
         "@kotlin.Deprecated(\"Nope\", kotlin.ReplaceWith(\"Yep\"))")
+  }
+
+  @Test fun modifyMembers() {
+    val builder = AnnotationSpec.builder(Deprecated::class)
+        .addMember("%S", "Nope")
+        .addMember("%T(%S)", ReplaceWith::class, "Yep")
+
+    builder.members.removeAt(1)
+    builder.members.add(CodeBlock.of("%T(%S)", ReplaceWith::class, "Nope"))
+
+    assertThat(builder.build().toString()).isEqualTo("" +
+        "@kotlin.Deprecated(\"Nope\", kotlin.ReplaceWith(\"Nope\"))")
   }
 
   private fun toString(annotationSpec: AnnotationSpec) =

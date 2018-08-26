@@ -16,7 +16,11 @@
 package com.squareup.kotlinpoet
 
 import com.google.common.truth.Truth.assertThat
-import org.junit.Test
+import com.squareup.kotlinpoet.ParameterizedTypeName.Companion.parameterizedBy
+import com.squareup.kotlinpoet.jvm.jvmField
+import com.squareup.kotlinpoet.jvm.jvmSuppressWildcards
+import java.util.concurrent.TimeUnit
+import kotlin.test.Test
 
 class KotlinPoetTest {
   private val tacosPackage = "com.squareup.tacos"
@@ -108,9 +112,9 @@ class KotlinPoetTest {
         |import kotlin.String
         |
         |class Taco(
-        |        val cheese: String,
-        |        var cilantro: String,
-        |        lettuce: String
+        |    val cheese: String,
+        |    var cilantro: String,
+        |    lettuce: String
         |) {
         |    val lettuce: String = lettuce.trim()
         |
@@ -148,7 +152,7 @@ class KotlinPoetTest {
 
   @Test fun mistargetedModifier() {
     assertThrows<IllegalArgumentException> {
-      PropertySpec.builder("CHEESE", String::class, KModifier.DATA)
+      PropertySpec.builder("CHEESE", String::class, KModifier.DATA).build()
     }
   }
 
@@ -366,9 +370,9 @@ class KotlinPoetTest {
       |import kotlin.Unit
       |
       |fun ((
-      |        name: String,
-      |        Int,
-      |        age: Long
+      |    name: String,
+      |    Int,
+      |    age: Long
       |) -> Unit).whatever(): Unit = Unit
       |""".trimMargin())
   }
@@ -418,8 +422,8 @@ class KotlinPoetTest {
   }
 
   @Test fun nullableTypes() {
-    val list = ParameterizedTypeName.get(List::class.asClassName().asNullable(),
-        Int::class.asClassName().asNullable()).asNullable()
+    val list = List::class.asClassName().asNullable()
+        .parameterizedBy(Int::class.asClassName().asNullable()).asNullable()
     assertThat(list.toString()).isEqualTo("kotlin.collections.List<kotlin.Int?>?")
   }
 
@@ -529,9 +533,9 @@ class KotlinPoetTest {
         |import kotlin.String
         |
         |open class A {
-        |    protected open infix operator external fun get(v: String): String
+        |    protected open external infix operator fun get(v: String): String
         |
-        |    internal final inline tailrec fun loop(): String = "a"
+        |    internal final tailrec inline fun loop(): String = "a"
         |}
         |""".trimMargin())
   }
@@ -577,6 +581,95 @@ class KotlinPoetTest {
       |var nullBar: (suspend (Foo) -> Bar)? = null
       |
       |fun foo(bar: suspend (Foo) -> Bar) {
+      |}
+      |""".trimMargin())
+  }
+
+  @Test fun enumAsDefaultArgument() {
+    val source = FileSpec.builder(tacosPackage, "Taco")
+        .addFunction(FunSpec.builder("timeout")
+            .addParameter("duration", Long::class)
+            .addParameter(ParameterSpec.builder("timeUnit", TimeUnit::class)
+                .defaultValue("%T.%L", TimeUnit::class, TimeUnit.MILLISECONDS.name)
+                .build())
+            .addStatement("this.timeout = timeUnit.toMillis(duration)")
+            .build())
+        .build()
+    assertThat(source.toString()).isEqualTo("""
+      |package com.squareup.tacos
+      |
+      |import java.util.concurrent.TimeUnit
+      |import kotlin.Long
+      |
+      |fun timeout(duration: Long, timeUnit: TimeUnit = TimeUnit.MILLISECONDS) {
+      |    this.timeout = timeUnit.toMillis(duration)
+      |}
+      |""".trimMargin())
+  }
+
+  @Test fun dynamicType() {
+    val source = FileSpec.builder(tacosPackage, "Taco")
+        .addFunction(FunSpec.builder("dynamicTest")
+            .addCode(CodeBlock.of("%L", PropertySpec.builder("d1", DYNAMIC)
+                .initializer("%S", "Taco")
+                .build()))
+            .addCode(CodeBlock.of("%L", PropertySpec.builder("d2", DYNAMIC)
+                .initializer("1f")
+                .build()))
+            .addStatement("// dynamics are dangerous!")
+            .addStatement("println(d1 - d2)")
+            .build())
+        .build()
+    assertThat(source.toString()).isEqualTo("""
+      |package com.squareup.tacos
+      |
+      |fun dynamicTest() {
+      |    val d1: dynamic = "Taco"
+      |    val d2: dynamic = 1f
+      |    // dynamics are dangerous!
+      |    println(d1 - d2)
+      |}
+      |""".trimMargin())
+  }
+
+  @Test fun primaryConstructorParameterAnnotation() {
+    val file = FileSpec.builder("com.squareup.tacos", "Taco")
+        .addType(TypeSpec.classBuilder("Taco")
+            .primaryConstructor(FunSpec.constructorBuilder()
+                .addParameter("foo", String::class)
+                .build())
+            .addProperty(PropertySpec.builder("foo", String::class)
+                .jvmField()
+                .initializer("foo")
+                .build())
+            .build())
+        .build()
+    assertThat(file.toString()).isEqualTo("""
+      |package com.squareup.tacos
+      |
+      |import kotlin.String
+      |import kotlin.jvm.JvmField
+      |
+      |class Taco(@JvmField val foo: String)
+      |""".trimMargin())
+  }
+
+  // https://github.com/square/kotlinpoet/issues/346
+  @Test fun importTypeArgumentInParameterizedTypeName() {
+    val file = FileSpec.builder("com.squareup.tacos", "Taco")
+        .addFunction(FunSpec.builder("foo")
+            .addParameter("a", List::class.asTypeName()
+                .parameterizedBy(Int::class.asTypeName().jvmSuppressWildcards()))
+            .build())
+        .build()
+    assertThat(file.toString()).isEqualTo("""
+      |package com.squareup.tacos
+      |
+      |import kotlin.Int
+      |import kotlin.collections.List
+      |import kotlin.jvm.JvmSuppressWildcards
+      |
+      |fun foo(a: List<@JvmSuppressWildcards Int>) {
       |}
       |""".trimMargin())
   }

@@ -16,10 +16,15 @@
 package com.squareup.kotlinpoet
 
 import com.google.common.truth.Truth.assertThat
-import org.junit.Test
 import java.io.Serializable
+import kotlin.test.Test
 
 class TypeVariableNameTest {
+  @Test fun nullableAnyIsImplicitBound() {
+    val typeVariableName = TypeVariableName("T")
+    assertThat(typeVariableName.bounds).containsExactly(ANY.asNullable())
+  }
+
   @Test fun oneTypeVariableNoBounds() {
     val funSpec = FunSpec.builder("foo")
         .addTypeVariable(TypeVariableName("T"))
@@ -85,7 +90,8 @@ class TypeVariableNameTest {
         .addStatement("return null")
         .build()
     assertThat(funSpec.toString()).isEqualTo("""
-      |fun <T, U> foo(): T? where T : java.io.Serializable, T : java.lang.Runnable, U : java.util.Comparator, U : kotlin.Cloneable = null
+      |fun <T, U> foo(): T? where T : java.io.Serializable, T : java.lang.Runnable,
+      |        U : java.util.Comparator, U : kotlin.Cloneable = null
       |""".trimMargin())
   }
 
@@ -98,7 +104,17 @@ class TypeVariableNameTest {
         .addStatement("return null")
         .build()
     assertThat(funSpec.toString()).isEqualTo("""
-      |fun <T, U : kotlin.Cloneable, V> foo(): T? where T : java.io.Serializable, T : java.lang.Runnable = null
+      |fun <T, U : kotlin.Cloneable, V> foo(): T? where T : java.io.Serializable,
+      |        T : java.lang.Runnable = null
+      |""".trimMargin())
+  }
+
+  @Test fun addingBoundsRemovesImplicitBound() {
+    val typeSpec = TypeSpec.classBuilder("Taco")
+        .addTypeVariable(TypeVariableName("T").withBounds(Number::class))
+        .build()
+    assertThat(typeSpec.toString()).isEqualTo("""
+      |class Taco<T : kotlin.Number>
       |""".trimMargin())
   }
 
@@ -136,6 +152,24 @@ class TypeVariableNameTest {
       |inline fun <reified T> printMembers() {
       |    println(T::class.members)
       |}
+      |""".trimMargin())
+  }
+
+  @Test fun anyBoundsIsLegal() {
+    val typeSpec = TypeSpec.classBuilder("Taco")
+        .addTypeVariable(TypeVariableName("E", ANY))
+        .build()
+    assertThat(typeSpec.toString()).isEqualTo("""
+      |class Taco<E : kotlin.Any>
+      |""".trimMargin())
+  }
+
+  @Test fun filterOutNullableAnyBounds() {
+    val typeSpec = TypeSpec.classBuilder("Taco")
+        .addTypeVariable(TypeVariableName("E", ANY.asNullable()))
+        .build()
+    assertThat(typeSpec.toString()).isEqualTo("""
+      |class Taco<E>
       |""".trimMargin())
   }
 }

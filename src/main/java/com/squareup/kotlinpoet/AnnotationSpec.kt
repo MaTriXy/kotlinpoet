@@ -100,8 +100,9 @@ class AnnotationSpec private constructor(builder: AnnotationSpec.Builder) {
   }
 
   class Builder internal constructor(internal val type: TypeName) {
-    internal val members = mutableListOf<CodeBlock>()
     internal var useSiteTarget: UseSiteTarget? = null
+
+    val members = mutableListOf<CodeBlock>()
 
     fun addMember(format: String, vararg args: Any) =
         addMember(CodeBlock.of(format, *args))
@@ -227,8 +228,8 @@ class AnnotationSpec private constructor(builder: AnnotationSpec.Builder) {
 
     @JvmStatic fun builder(type: ClassName) = Builder(type)
 
-    @JvmStatic fun builder(type: Class<*>) = builder(type.asClassName())
+    @JvmStatic fun builder(type: Class<out Annotation>) = builder(type.asClassName())
 
-    @JvmStatic fun builder(type: KClass<*>) = builder(type.asClassName())
+    @JvmStatic fun builder(type: KClass<out Annotation>) = builder(type.asClassName())
   }
 }

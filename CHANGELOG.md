@@ -1,6 +1,54 @@
 Change Log
 ==========
 
+## Version 1.0.0-RC1
+
+_2018-07-16_
+
+ * New: Escape keywords in imports and canonical class names.
+ * New: Improve `external` support.
+ * New: Extensions for `KType` and `KTypeParameter`.
+ * New: Add builder methods to simplify adding common kotlin.jvm annotations.
+ * New: Enums are able to have companion objects.
+ * New: Add missing primaryConstructor & companionObject to `TypeSpec#toBuilder()`.
+ * New: Make subtype checking vals inside Kind public.
+ * New: Escape (class/property/function/variable) names automatically if they contain space, hyphen, or other symbols.
+ * New: Improve `ParameterizedTypeName` API.
+ * New: Add `WildcardTypeName.STAR` constant.
+ * New: Expose mutable builder properties and move their validations to build-time.
+ * Fix: Use regular indents for parameter lists.
+ * Fix: Inline annotations on properties defined in primary constructor.
+ * Fix: Use `Any?` as the default type variable bounds.
+ * Fix: Fix importing annotated `TypeName`.
+ * Fix: If any primary constructor property has KDoc, put properties on new lines.
+ * Fix: Properly emit where block in type signature.
+ * Fix: Avoid type name collisions in primary constructor.
+ * Fix: Remove implicit `TypeVariable` bound when more bounds are added.
+ * Fix: Combine annotations and modifiers from constructor params and properties.
+ * Fix: Replace delegate constructor args along with the constructor.
+
+## Version 0.7.0
+
+_2018-02-16_
+
+ * New: Increase indent to 4 spaces.
+ * New: Delegate super interfaces as constructor parameters.
+ * New: Support `PropertySpec`s as `CodeBlock` literals.
+ * New: Support KDoc for `TypeAliasSpec`.
+ * New: Allow for adding an initializer block inside a companion object.
+ * New: Escape name in `ParameterSpec` which is also a keyword.
+ * New: Escape names in statements.
+ * New: Set com.squareup.kotlinpoet as automatic module name.
+ * New: Support suspending lambda types.
+ * New: Support named `LambdaTypeName` parameters.
+ * New: Support dynamic type.
+ * New: Disallow wildcard imports.
+ * New: Depend on Kotlin 1.2.21.
+ * Fix: Correct handling of super-classes/interfaces on anonymous classes.
+ * Fix: Fix boundary filtering to `Any?`.
+ * Fix: Wrap long property initializers.
+ * Fix: Fix formatting and indentation of parameter lists.
+
 ## Version 0.6.0
 
 _2017-11-03_

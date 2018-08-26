@@ -16,9 +16,7 @@
 package com.squareup.kotlinpoet
 
 import com.google.common.truth.Truth.assertThat
-import org.junit.Assert.fail
-import org.junit.Ignore
-import org.junit.Test
+import com.squareup.kotlinpoet.ParameterizedTypeName.Companion.parameterizedBy
 import java.io.Serializable
 import java.nio.charset.Charset
 import javax.lang.model.type.DeclaredType
@@ -27,6 +25,14 @@ import javax.lang.model.type.TypeKind
 import javax.lang.model.type.TypeVisitor
 import javax.lang.model.util.Elements
 import javax.lang.model.util.Types
+import kotlin.reflect.KTypeProjection
+import kotlin.reflect.KVariance
+import kotlin.reflect.full.createType
+import kotlin.reflect.full.declaredFunctions
+import kotlin.reflect.full.starProjectedType
+import kotlin.test.Ignore
+import kotlin.test.Test
+import kotlin.test.fail
 
 abstract class AbstractTypesTest {
   protected abstract val elements: Elements
@@ -48,8 +54,7 @@ abstract class AbstractTypesTest {
   @Test fun getParameterizedTypeMirror() {
     val setType = types.getDeclaredType(getElement(Set::class.java), getMirror(String::class.java))
     assertThat(setType.asTypeName())
-        .isEqualTo(
-            ParameterizedTypeName.get(Set::class.asClassName(), String::class.asClassName()))
+        .isEqualTo(Set::class.asClassName().parameterizedBy(String::class.asClassName()))
   }
 
   @Test fun getErrorType() {
@@ -117,7 +122,7 @@ abstract class AbstractTypesTest {
 
   @Test fun getArrayTypeMirror() {
     assertThat(types.getArrayType(getMirror(String::class.java)).asTypeName())
-        .isEqualTo(ParameterizedTypeName.get(ARRAY, String::class.asClassName()))
+        .isEqualTo(ARRAY.parameterizedBy(String::class.asClassName()))
   }
 
   @Test fun getVoidTypeMirror() {
@@ -133,13 +138,12 @@ abstract class AbstractTypesTest {
   }
 
   @Test fun parameterizedType() {
-    val type = ParameterizedTypeName.get(Map::class, String::class, Long::class)
+    val type = Map::class.parameterizedBy(String::class, Long::class)
     assertThat(type.toString()).isEqualTo("kotlin.collections.Map<kotlin.String, kotlin.Long>")
   }
 
   @Test fun starProjection() {
-    val type = WildcardTypeName.subtypeOf(ANY)
-    assertThat(type.toString()).isEqualTo("*")
+    assertThat(WildcardTypeName.STAR.toString()).isEqualTo("*")
   }
 
   @Ignore("Figure out what this maps to in Kotlin.")
@@ -180,6 +184,19 @@ abstract class AbstractTypesTest {
   @Test fun typeVariable() {
     val type = TypeVariableName("T", CharSequence::class)
     assertThat(type.toString()).isEqualTo("T") // (Bounds are only emitted in declaration.)
+  }
+
+  @Test fun kType() {
+    assertThat(Map::class.starProjectedType.asTypeName().toString())
+        .isEqualTo("kotlin.collections.Map<*, *>")
+    assertThat(Map::class.createType(listOf(KTypeProjection(KVariance.INVARIANT, String::class.createType(emptyList())), KTypeProjection.STAR)).asTypeName().toString())
+        .isEqualTo("kotlin.collections.Map<kotlin.String, *>")
+    assertThat(Map.Entry::class.createType(listOf(KTypeProjection(KVariance.INVARIANT, String::class.createType(emptyList())), KTypeProjection.STAR)).asTypeName().toString())
+        .isEqualTo("kotlin.collections.Map.Entry<kotlin.String, *>")
+
+    val treeMapClass = java.util.TreeMap::class
+    assertThat(treeMapClass.declaredFunctions.find { it.name == "parentOf" }!!.returnType.asTypeName().toString())
+        .isEqualTo("java.util.TreeMap.Entry<K, V>")
   }
 
   private class DeclaredTypeAsErrorType(private val declaredType: DeclaredType) : ErrorType {

@@ -60,9 +60,14 @@ class FunSpec private constructor(builder: Builder) {
   internal fun emit(
     codeWriter: CodeWriter,
     enclosingName: String?,
-    implicitModifiers: Set<KModifier>
+    implicitModifiers: Set<KModifier>,
+    includeParametersKdoc: Boolean
   ) {
-    codeWriter.emitKdoc(kdoc)
+    if (includeParametersKdoc) {
+      codeWriter.emitKdoc(kdocWithParameters())
+    } else {
+      codeWriter.emitKdoc(kdoc)
+    }
     codeWriter.emitAnnotations(annotations, false)
     codeWriter.emitModifiers(modifiers, implicitModifiers)
 
@@ -112,7 +117,7 @@ class FunSpec private constructor(builder: Builder) {
           codeWriter.emitCode("%T.", receiverType)
         }
       }
-      codeWriter.emitCode("%L", escapeIfKeyword(name))
+      codeWriter.emitCode("%L", escapeIfNecessary(name))
     }
 
     parameters.emit(codeWriter) { param ->
@@ -133,6 +138,17 @@ class FunSpec private constructor(builder: Builder) {
 
   val isAccessor get() = name.isAccessor
 
+  private fun kdocWithParameters(): CodeBlock {
+    return with(kdoc.toBuilder()) {
+      for (parameterSpec in parameters) {
+        if (parameterSpec.kdoc.isNotEmpty()) {
+          add("@param %L %L", parameterSpec.name, parameterSpec.kdoc)
+        }
+      }
+      build()
+    }
+  }
+
   override fun equals(other: Any?): Boolean {
     if (this === other) return true
     if (other == null) return false
@@ -143,7 +159,11 @@ class FunSpec private constructor(builder: Builder) {
   override fun hashCode() = toString().hashCode()
 
   override fun toString() = buildString {
-    emit(CodeWriter(this), "Constructor", TypeSpec.Kind.CLASS.implicitFunctionModifiers)
+    emit(
+        codeWriter = CodeWriter(this),
+        enclosingName = "Constructor",
+        implicitModifiers = TypeSpec.Kind.Class().implicitFunctionModifiers,
+        includeParametersKdoc = true)
   }
 
   fun toBuilder(): Builder {
@@ -157,20 +177,22 @@ class FunSpec private constructor(builder: Builder) {
     builder.delegateConstructor = delegateConstructor
     builder.delegateConstructorArguments += delegateConstructorArguments
     builder.body.add(body)
+    builder.receiverType = receiverType
     return builder
   }
 
   class Builder internal constructor(internal val name: String) {
     internal val kdoc = CodeBlock.builder()
-    internal val annotations = mutableListOf<AnnotationSpec>()
-    internal val modifiers = mutableListOf<KModifier>()
-    internal val typeVariables = mutableListOf<TypeVariableName>()
     internal var receiverType: TypeName? = null
     internal var returnType: TypeName? = null
-    internal val parameters = mutableListOf<ParameterSpec>()
     internal var delegateConstructor: String? = null
-    internal val delegateConstructorArguments = mutableListOf<CodeBlock>()
+    internal var delegateConstructorArguments = listOf<CodeBlock>()
     internal val body = CodeBlock.builder()
+
+    val annotations = mutableListOf<AnnotationSpec>()
+    val modifiers = mutableListOf<KModifier>()
+    val typeVariables = mutableListOf<TypeVariableName>()
+    val parameters = mutableListOf<ParameterSpec>()
 
     fun addKdoc(format: String, vararg args: Any) = apply {
       kdoc.add(format, *args)
@@ -225,12 +247,10 @@ class FunSpec private constructor(builder: Builder) {
     }
 
     fun addTypeVariables(typeVariables: Iterable<TypeVariableName>) = apply {
-      check(!name.isAccessor) { "$name cannot have type variables" }
       this.typeVariables += typeVariables
     }
 
     fun addTypeVariable(typeVariable: TypeVariableName) = apply {
-      check(!name.isAccessor) { "$name cannot have type variables" }
       typeVariables += typeVariable
     }
 
@@ -259,8 +279,6 @@ class FunSpec private constructor(builder: Builder) {
     }
 
     fun addParameter(parameterSpec: ParameterSpec) = apply {
-      check(name != GETTER) { "$name cannot have parameters" }
-      check(name != SETTER || parameters.size == 0) { "$name can have only one parameter" }
       parameters += parameterSpec
     }
 
@@ -283,7 +301,7 @@ class FunSpec private constructor(builder: Builder) {
     private fun callConstructor(constructor: String, vararg args: CodeBlock) {
       check(name.isConstructor) { "only constructors can delegate to other constructors!" }
       delegateConstructor = constructor
-      delegateConstructorArguments += args
+      delegateConstructorArguments = args.toList()
     }
 
     fun addParameter(name: String, type: TypeName, vararg modifiers: KModifier)
@@ -335,7 +353,12 @@ class FunSpec private constructor(builder: Builder) {
       body.addStatement(format, *args)
     }
 
-    fun build() = FunSpec(this)
+    fun build(): FunSpec {
+      check(typeVariables.isEmpty() || !name.isAccessor) { "$name cannot have type variables" }
+      check(!(name == GETTER && parameters.isNotEmpty())) { "$name cannot have parameters" }
+      check(!(name == SETTER && parameters.size != 1)) { "$name can have only one parameter" }
+      return FunSpec(this)
+    }
   }
 
   companion object {
@@ -343,8 +366,8 @@ class FunSpec private constructor(builder: Builder) {
     internal const val GETTER = "get()"
     internal const val SETTER = "set()"
 
-    private val String.isConstructor get() = this == CONSTRUCTOR
-    private val String.isAccessor get() = this.isOneOf(GETTER, SETTER)
+    internal val String.isConstructor get() = this == CONSTRUCTOR
+    internal val String.isAccessor get() = this.isOneOf(GETTER, SETTER)
 
     private val EXPRESSION_BODY_PREFIX = CodeBlock.of("return ")
 
@@ -364,7 +387,7 @@ class FunSpec private constructor(builder: Builder) {
      * throws declarations. An `override` modifier will be added.
      */
     @JvmStatic fun overriding(method: ExecutableElement): Builder {
-      var modifiers: MutableSet<Modifier> = method.modifiers
+      var modifiers: Set<Modifier> = method.modifiers
       require(Modifier.PRIVATE !in modifiers
           && Modifier.FINAL !in modifiers
           && Modifier.STATIC !in modifiers) {

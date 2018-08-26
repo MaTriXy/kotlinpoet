@@ -16,8 +16,9 @@
 package com.squareup.kotlinpoet
 
 import com.google.common.truth.Truth.assertThat
-import org.junit.Test
+import com.squareup.kotlinpoet.ParameterizedTypeName.Companion.parameterizedBy
 import java.util.concurrent.atomic.AtomicReference
+import kotlin.test.Test
 
 class TypeAliasSpecTest {
 
@@ -40,7 +41,7 @@ class TypeAliasSpecTest {
   @Test fun typeVariable() {
     val v = TypeVariableName("V")
     val typeAliasSpec = TypeAliasSpec
-        .builder("Word", ParameterizedTypeName.get(List::class.asClassName(), v))
+        .builder("Word", List::class.asClassName().parameterizedBy(v))
         .addTypeVariable(v)
         .build()
 
@@ -83,9 +84,7 @@ class TypeAliasSpecTest {
   }
 
   @Test fun implTypeAlias() {
-    val typeName = ParameterizedTypeName.get(
-        AtomicReference::class.asClassName(),
-        TypeVariableName("V"))
+    val typeName = AtomicReference::class.asClassName().parameterizedBy(TypeVariableName("V"))
     val typeAliasSpec = TypeAliasSpec
         .builder("AtomicRef<V>", typeName)
         .addModifiers(KModifier.ACTUAL)
@@ -116,5 +115,39 @@ class TypeAliasSpecTest {
 
     assertThat(a == b).isTrue()
     assertThat(a.hashCode()).isEqualTo(b.hashCode())
+  }
+
+  @Test fun generalBuilderEqualityTest() {
+    val typeParam = TypeVariableName("V")
+    val typeAliasSpec = TypeAliasSpec
+        .builder("Bio", Pair::class.parameterizedBy(String::class, String::class))
+        .addKdoc("First nand Last Name.\n")
+        .addModifiers(KModifier.PUBLIC)
+        .addTypeVariable(typeParam)
+        .build()
+    assertThat(typeAliasSpec.toBuilder().build()).isEqualTo(typeAliasSpec)
+  }
+
+  @Test fun modifyModifiers() {
+    val builder = TypeAliasSpec
+        .builder("Word", String::class)
+        .addModifiers(KModifier.PRIVATE)
+
+    builder.modifiers.clear()
+    builder.modifiers.add(KModifier.INTERNAL)
+
+    assertThat(builder.build().modifiers).containsExactly(KModifier.INTERNAL)
+  }
+
+  @Test fun modifyTypeVariableNames() {
+    val builder = TypeAliasSpec
+        .builder("Word", String::class)
+        .addTypeVariable(TypeVariableName("V"))
+
+    val tVar = TypeVariableName("T")
+    builder.typeVariables.clear()
+    builder.typeVariables.add(tVar)
+
+    assertThat(builder.build().typeVariables).containsExactly(tVar)
   }
 }

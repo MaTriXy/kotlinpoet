@@ -18,6 +18,8 @@ package com.squareup.kotlinpoet
 /** Sentinel value that indicates that no user-provided package has been set.  */
 private val NO_PACKAGE = String()
 
+internal val NULLABLE_ANY = ANY.asNullable()
+
 private fun extractMemberName(part: String): String {
   require(Character.isJavaIdentifierStart(part[0])) { "not an identifier: $part" }
   for (i in 1..part.length) {
@@ -36,7 +38,7 @@ internal class CodeWriter constructor(
   out: Appendable,
   private val indent: String = DEFAULT_INDENT,
   private val memberImports: Map<String, Import> = emptyMap(),
-  private val importedTypes: Map<String, ClassName> = emptyMap()
+  val importedTypes: Map<String, ClassName> = emptyMap()
 ) {
   private val out = LineWrapper(out, indent, 100)
   private var indentLevel = 0
@@ -62,8 +64,6 @@ internal class CodeWriter constructor(
       memberImportClassNames.add(className.substring(0, className.lastIndexOf('.')))
     }
   }
-
-  fun importedTypes() = importedTypes
 
   fun indent(levels: Int = 1) = apply {
     indentLevel += levels
@@ -158,7 +158,7 @@ internal class CodeWriter constructor(
         emit("reified ")
       }
       emitCode("%L", typeVariable.name)
-      if (typeVariable.bounds.size == 1) {
+      if (typeVariable.bounds.size == 1 && typeVariable.bounds[0] != NULLABLE_ANY) {
         emitCode(" : %T", typeVariable.bounds[0])
       }
     }
@@ -176,9 +176,8 @@ internal class CodeWriter constructor(
     for (typeVariable in typeVariables) {
       if (typeVariable.bounds.size > 1) {
         for (bound in typeVariable.bounds) {
-          if (!firstBound) emit(", ") else emit(" where ")
-          emitCode("%L", typeVariable.name)
-          emitCode(" : %T", bound)
+          if (!firstBound) emitCode(",%W") else emitCode("%Wwhere ")
+          emitCode("%L : %T", typeVariable.name, bound)
           firstBound = false
         }
       }
@@ -301,6 +300,7 @@ internal class CodeWriter constructor(
     when (o) {
       is TypeSpec -> o.emit(this, null)
       is AnnotationSpec -> o.emit(this, inline = true, asParameter = true)
+      is PropertySpec -> o.emit(this, emptySet())
       is CodeBlock -> emitCode(o)
       else -> emit(o.toString())
     }
@@ -318,16 +318,16 @@ internal class CodeWriter constructor(
     var c: ClassName? = className
     while (c != null) {
       val alias = memberImports[c.canonicalName]?.alias
-      val simpleName = alias ?: c.simpleName()
+      val simpleName = alias ?: c.simpleName
       val resolved = resolve(simpleName)
       nameResolved = resolved != null
 
-      // We don't care about nullability here, as it's irrelevant for imports.
-      if (resolved == c.asNonNullable()) {
+      // We don't care about nullability and type annotations here, as it's irrelevant for imports.
+      if (resolved == c.asNonNullable().withoutAnnotations()) {
         if (alias != null) return alias
-        val suffixOffset = c.simpleNames().size - 1
-        return className.simpleNames().subList(suffixOffset,
-            className.simpleNames().size).joinToString(".")
+        val suffixOffset = c.simpleNames.size - 1
+        return className.simpleNames.subList(suffixOffset,
+            className.simpleNames.size).joinToString(".")
       }
       c = c.enclosingClassName()
     }
@@ -338,9 +338,9 @@ internal class CodeWriter constructor(
     }
 
     // If the class is in the same package, we're done.
-    if (packageName == className.packageName()) {
-      referencedNames.add(className.topLevelClassName().simpleName())
-      return className.simpleNames().joinToString(".")
+    if (packageName == className.packageName) {
+      referencedNames.add(className.topLevelClassName().simpleName)
+      return className.simpleNames.joinToString(".")
     }
 
     // We'll have to use the fully-qualified name. Mark the type as importable for a future pass.
@@ -352,11 +352,11 @@ internal class CodeWriter constructor(
   }
 
   private fun importableType(className: ClassName) {
-    if (className.packageName().isEmpty()) {
+    if (className.packageName.isEmpty()) {
       return
     }
     val topLevelClassName = className.topLevelClassName()
-    val simpleName = memberImports[className.canonicalName]?.alias ?: topLevelClassName.simpleName()
+    val simpleName = memberImports[className.canonicalName]?.alias ?: topLevelClassName.simpleName
     val replaced = importableTypes.put(simpleName, topLevelClassName)
     if (replaced != null) {
       importableTypes.put(simpleName, replaced) // On collision, prefer the first inserted.

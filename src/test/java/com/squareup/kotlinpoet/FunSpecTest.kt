@@ -15,26 +15,22 @@
  */
 package com.squareup.kotlinpoet
 
-import com.google.common.collect.ImmutableSet
 import com.google.common.collect.Iterables.getOnlyElement
 import com.google.common.truth.Truth.assertThat
 import com.google.testing.compile.CompilationRule
-import org.junit.Before
+import com.squareup.kotlinpoet.ParameterizedTypeName.Companion.parameterizedBy
 import org.junit.Rule
-import org.junit.Test
-import org.mockito.Mockito
-import org.mockito.Mockito.mock
 import java.io.Closeable
 import java.io.IOException
 import java.util.concurrent.Callable
-import javax.lang.model.element.Element
 import javax.lang.model.element.ExecutableElement
-import javax.lang.model.element.Modifier
 import javax.lang.model.element.TypeElement
 import javax.lang.model.type.DeclaredType
 import javax.lang.model.util.ElementFilter.methodsIn
 import javax.lang.model.util.Elements
 import javax.lang.model.util.Types
+import kotlin.test.BeforeTest
+import kotlin.test.Test
 
 class FunSpecTest {
   @Rule @JvmField val compilation = CompilationRule()
@@ -42,7 +38,7 @@ class FunSpecTest {
   private lateinit var elements: Elements
   private lateinit var types: Types
 
-  @Before fun setUp() {
+  @BeforeTest fun setUp() {
     elements = compilation.elements
     types = compilation.types
   }
@@ -70,7 +66,18 @@ class FunSpecTest {
 
   internal interface ExtendsOthers : Callable<Int>, Comparable<Long>
 
-  internal interface ExtendsIterableWithDefaultMethods : Iterable<Any>
+  abstract class InvalidOverrideMethods {
+    fun finalMethod() {
+    }
+
+    private fun privateMethod() {
+    }
+
+    companion object {
+      @JvmStatic open fun staticMethod() {
+      }
+    }
+  }
 
   @Test fun overrideEverything() {
     val classElement = getElement(Everything::class.java)
@@ -78,7 +85,8 @@ class FunSpecTest {
     val funSpec = FunSpec.overriding(methodElement).build()
     assertThat(funSpec.toString()).isEqualTo("""
         |@kotlin.jvm.Throws(java.io.IOException::class, java.lang.SecurityException::class)
-        |protected override fun <T> everything(arg0: java.lang.String, arg1: java.util.List<out T>): java.lang.Runnable where T : java.lang.Runnable, T : java.io.Closeable {
+        |protected override fun <T> everything(arg0: java.lang.String, arg1: java.util.List<out T>): java.lang.Runnable
+        |        where T : java.lang.Runnable, T : java.io.Closeable {
         |}
         |""".trimMargin())
   }
@@ -113,24 +121,20 @@ class FunSpecTest {
   }
 
   @Test fun overrideInvalidModifiers() {
-    val method = mock(ExecutableElement::class.java)
-    whenMock(method.modifiers).thenReturn(ImmutableSet.of(Modifier.FINAL))
-    val element = mock(Element::class.java)
-    whenMock(element.asType()).thenReturn(mock(DeclaredType::class.java))
-    whenMock(method.enclosingElement).thenReturn(element)
-    assertThrows<IllegalArgumentException> {
-      FunSpec.overriding(method)
-    }.hasMessageThat().isEqualTo("cannot override method with modifiers: [final]")
+    val classElement = getElement(InvalidOverrideMethods::class.java)
+    val methods = methodsIn(elements.getAllMembers(classElement))
 
-    whenMock(method.modifiers).thenReturn(ImmutableSet.of(Modifier.PRIVATE))
     assertThrows<IllegalArgumentException> {
-      FunSpec.overriding(method)
-    }.hasMessageThat().isEqualTo("cannot override method with modifiers: [private]")
+      FunSpec.overriding(findFirst(methods, "finalMethod"))
+    }.hasMessageThat().isEqualTo("cannot override method with modifiers: [public, final]")
 
-    whenMock(method.modifiers).thenReturn(ImmutableSet.of(Modifier.STATIC))
     assertThrows<IllegalArgumentException> {
-      FunSpec.overriding(method)
-    }.hasMessageThat().isEqualTo("cannot override method with modifiers: [static]")
+      FunSpec.overriding(findFirst(methods, "privateMethod"))
+    }.hasMessageThat().isEqualTo("cannot override method with modifiers: [private, final]")
+
+    assertThrows<IllegalArgumentException> {
+      FunSpec.overriding(findFirst(methods, "staticMethod"))
+    }.hasMessageThat().isEqualTo("cannot override method with modifiers: [public, static]")
   }
 
   @Test fun nullableParam() {
@@ -150,6 +154,34 @@ class FunSpecTest {
         .build()
     assertThat(funSpec.toString()).isEqualTo("""
       |fun foo(): kotlin.String? {
+      |}
+      |""".trimMargin())
+  }
+
+  @Test fun functionParamWithKdoc() {
+    val funSpec = FunSpec.builder("foo")
+        .addParameter(ParameterSpec.builder("string", String::class.asTypeName())
+            .addKdoc("A string parameter.\n")
+            .build())
+        .addParameter(ParameterSpec.builder("number", Int::class.asTypeName())
+            .addKdoc("A number with a multi-line doc comment.\nYes,\nthese\nthings\nhappen.\n")
+            .build())
+        .addParameter(ParameterSpec.builder("nodoc", Boolean::class.asTypeName()).build())
+        .build()
+    assertThat(funSpec.toString()).isEqualTo("""
+      |/**
+      | * @param string A string parameter.
+      | * @param number A number with a multi-line doc comment.
+      | * Yes,
+      | * these
+      | * things
+      | * happen.
+      | */
+      |fun foo(
+      |    string: kotlin.String,
+      |    number: kotlin.Int,
+      |    nodoc: kotlin.Boolean
+      |) {
       |}
       |""".trimMargin())
   }
@@ -249,7 +281,7 @@ class FunSpecTest {
 
   @Test fun thisConstructorDelegate() {
     val funSpec = FunSpec.constructorBuilder()
-        .addParameter("list", ParameterizedTypeName.get(List::class, Int::class))
+        .addParameter("list", List::class.parameterizedBy(Int::class))
         .callThisConstructor("list[0]", "list[1]")
         .build()
 
@@ -260,7 +292,7 @@ class FunSpecTest {
 
   @Test fun superConstructorDelegate() {
     val funSpec = FunSpec.constructorBuilder()
-        .addParameter("list", ParameterizedTypeName.get(List::class, Int::class))
+        .addParameter("list", List::class.parameterizedBy(Int::class))
         .callSuperConstructor("list[0]", "list[1]")
         .build()
 
@@ -346,5 +378,105 @@ class FunSpecTest {
       |""".trimMargin())
   }
 
-  private fun whenMock(any: Any?) = Mockito.`when`(any)
+  @Test fun escapePunctuationInFunctionName() {
+    val funSpec = FunSpec.builder("with-hyphen")
+        .build()
+
+    assertThat(funSpec.toString()).isEqualTo("""
+      |fun `with-hyphen`() {
+      |}
+      |""".trimMargin())
+  }
+
+  @Test fun generalBuilderEqualityTest() {
+    val funSpec = FunSpec.Builder("getConfig")
+        .addKdoc("Fix me")
+        .addAnnotation(AnnotationSpec.builder(SuppressWarnings::class)
+            .build())
+        .addModifiers(KModifier.PROTECTED)
+        .addTypeVariable(TypeVariableName("T"))
+        .receiver(String::class)
+        .returns(String::class)
+        .addParameter(ParameterSpec.builder("config", String::class)
+            .build())
+        .addParameter(ParameterSpec.builder("override", TypeVariableName("T"))
+            .build())
+        .beginControlFlow("return when")
+        .addStatement("    override is String -> config + override")
+        .addStatement("    else -> config + %S", "{ttl:500}")
+        .endControlFlow()
+        .build();
+
+    assertThat(funSpec.toBuilder().build()).isEqualTo(funSpec);
+  }
+
+  @Test fun constructorBuilderEqualityTest() {
+    val funSpec = FunSpec.constructorBuilder()
+        .addParameter("list", List::class.parameterizedBy(Int::class))
+        .callThisConstructor("list[0]", "list[1]")
+        .build()
+
+    assertThat(funSpec.toBuilder().build()).isEqualTo(funSpec)
+  }
+
+  // https://github.com/square/kotlinpoet/issues/398
+  @Test fun changingDelegateConstructorOverridesArgs() {
+    val funSpec = FunSpec.constructorBuilder()
+        .addParameter("values", List::class.parameterizedBy(String::class))
+        .callSuperConstructor("values")
+        .build()
+    val updatedFunSpec = funSpec.toBuilder()
+        .callSuperConstructor("values.toImmutableList()")
+        .build()
+    assertThat(updatedFunSpec.toString()).isEqualTo("""
+      |constructor(values: kotlin.collections.List<kotlin.String>) : super(values.toImmutableList())
+      |""".trimMargin())
+  }
+
+  @Test fun modifyModifiers() {
+    val builder = FunSpec.builder("taco")
+        .addModifiers(KModifier.PRIVATE)
+
+    builder.modifiers.clear()
+    builder.modifiers.add(KModifier.INTERNAL)
+
+    assertThat(builder.build().modifiers).containsExactly(KModifier.INTERNAL)
+  }
+
+  @Test fun modifyAnnotations() {
+    val builder = FunSpec.builder("taco")
+        .addAnnotation(AnnotationSpec.builder(JvmName::class.asClassName())
+            .addMember("name = %S", "jvmWord")
+            .build())
+
+    val javaWord = AnnotationSpec.builder(JvmName::class.asClassName())
+        .addMember("name = %S", "javaWord")
+        .build()
+    builder.annotations.clear()
+    builder.annotations.add(javaWord)
+
+    assertThat(builder.build().annotations).containsExactly(javaWord)
+  }
+
+  @Test fun modifyTypeVariableNames() {
+    val builder = FunSpec.builder("taco")
+        .addTypeVariable(TypeVariableName("V"))
+
+    val tVar = TypeVariableName("T")
+    builder.typeVariables.clear()
+    builder.typeVariables.add(tVar)
+
+    assertThat(builder.build().typeVariables).containsExactly(tVar)
+  }
+
+  @Test fun modifyParameters() {
+    val builder = FunSpec.builder("taco")
+        .addParameter(ParameterSpec.builder("topping", String::class.asClassName()).build())
+
+    val seasoning = ParameterSpec.builder("seasoning", String::class.asClassName()).build()
+    builder.parameters.clear()
+    builder.parameters.add(seasoning)
+
+    assertThat(builder.build().parameters).containsExactly(seasoning)
+  }
 }

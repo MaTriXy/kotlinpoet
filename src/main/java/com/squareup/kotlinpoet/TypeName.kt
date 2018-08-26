@@ -17,6 +17,7 @@
 
 package com.squareup.kotlinpoet
 
+import com.squareup.kotlinpoet.ParameterizedTypeName.Companion.parameterizedBy
 import java.lang.reflect.GenericArrayType
 import java.lang.reflect.ParameterizedType
 import java.lang.reflect.Type
@@ -116,7 +117,7 @@ abstract class TypeName internal constructor(
   companion object {
     internal fun get(
       mirror: TypeMirror,
-      typeVariables: MutableMap<TypeParameterElement, TypeVariableName>
+      typeVariables: Map<TypeParameterElement, TypeVariableName>
     ): TypeName {
       return mirror.accept(object : SimpleTypeVisitor7<TypeName, Void?>() {
         override fun visitPrimitive(t: PrimitiveType, p: Void?): TypeName {
@@ -149,7 +150,7 @@ abstract class TypeName internal constructor(
             typeArgumentNames += get(typeArgument, typeVariables)
           }
           return if (enclosing is ParameterizedTypeName)
-            enclosing.nestedClass(rawType.simpleName(), typeArgumentNames) else
+            enclosing.nestedClass(rawType.simpleName, typeArgumentNames) else
             ParameterizedTypeName(null, rawType, typeArgumentNames)
         }
 
@@ -158,7 +159,7 @@ abstract class TypeName internal constructor(
         }
 
         override fun visitArray(t: ArrayType, p: Void?): ParameterizedTypeName {
-          return ParameterizedTypeName.get(ARRAY, TypeName.get(t.componentType, typeVariables))
+          return ARRAY.parameterizedBy(TypeName.get(t.componentType, typeVariables))
         }
 
         override fun visitTypeVariable(t: javax.lang.model.type.TypeVariable, p: Void?): TypeName {
@@ -192,13 +193,13 @@ abstract class TypeName internal constructor(
           type === Char::class.javaPrimitiveType -> CHAR
           type === Float::class.javaPrimitiveType -> FLOAT
           type === Double::class.javaPrimitiveType -> DOUBLE
-          type.isArray -> ParameterizedTypeName.get(ARRAY, get(type.componentType, map))
+          type.isArray -> ARRAY.parameterizedBy(get(type.componentType, map))
           else -> type.asClassName()
         }
         is ParameterizedType -> ParameterizedTypeName.get(type, map)
         is WildcardType -> WildcardTypeName.get(type, map)
         is TypeVariable<*> -> TypeVariableName.get(type, map)
-        is GenericArrayType -> ParameterizedTypeName.get(ARRAY, get(type.genericComponentType, map))
+        is GenericArrayType -> ARRAY.parameterizedBy(get(type.genericComponentType, map))
         else -> throw IllegalArgumentException("unexpected type: " + type)
       }
     }
@@ -216,6 +217,25 @@ abstract class TypeName internal constructor(
 @JvmField val CHAR = ClassName("kotlin", "Char")
 @JvmField val FLOAT = ClassName("kotlin", "Float")
 @JvmField val DOUBLE = ClassName("kotlin", "Double")
+
+@JvmField val DYNAMIC = object : TypeName(false, emptyList()) {
+
+  override fun asNullable() =
+      throw UnsupportedOperationException("dynamic can't be nullable")
+
+  override fun asNonNullable() =
+      throw UnsupportedOperationException("dynamic can't be non-nullable")
+
+  override fun annotated(annotations: List<AnnotationSpec>) =
+      throw UnsupportedOperationException("dynamic can't have annotations")
+
+  override fun withoutAnnotations() =
+      throw UnsupportedOperationException("dynamic can't have annotations")
+
+  override fun emit(out: CodeWriter) = out.apply {
+    emit("dynamic")
+  }
+}
 
 /** Returns a [TypeName] equivalent to this [TypeMirror]. */
 @JvmName("get")

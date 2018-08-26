@@ -318,7 +318,7 @@ class CodeBlock private constructor(
 
     private fun addArgument(format: String, c: Char, arg: Any?) {
       when (c) {
-        'N' -> this.args += argToName(arg)
+        'N' -> this.args += escapeIfKeyword(argToName(arg))
         'L' -> this.args += argToLiteral(arg)
         'S' -> this.args += argToString(arg)
         'T' -> this.args += argToType(arg)
@@ -350,12 +350,25 @@ class CodeBlock private constructor(
     }
 
     /**
-     * @param controlFlow the control flow construct and its code, such as "if (foo == 5)".
-     *     Shouldn't contain braces or newline characters.
+     * @param controlFlow the control flow construct and its code, such as `if (foo == 5)`.
+     *     Shouldn't contain newline characters. Can contain opening braces, e.g.
+     *     `beginControlFlow("list.forEach { element ->")`. If there's no opening brace at the end
+     *     of the string, it will be added.
      */
     fun beginControlFlow(controlFlow: String, vararg args: Any?) = apply {
-      add(controlFlow + " {\n", *args)
+      add(controlFlow.withOpeningBrace(), *args)
       indent()
+    }
+
+    private fun String.withOpeningBrace(): String {
+      for (i in length - 1 downTo 0) {
+        if (this[i] == '{') {
+          return "$this\n"
+        } else if (this[i] == '}') {
+          break
+        }
+      }
+      return "$this {\n"
     }
 
     /**
@@ -401,6 +414,7 @@ class CodeBlock private constructor(
     private const val ARG_NAME = 1
     private const val TYPE_NAME = 2
     private val NO_ARG_PLACEHOLDERS = setOf("%W", "%>", "%<", "%[", "%]")
+    internal val EMPTY = CodeBlock(emptyList(), emptyList())
 
     @JvmStatic fun of(format: String, vararg args: Any?) = Builder().add(format, *args).build()
     @JvmStatic fun builder() = Builder()

@@ -16,7 +16,8 @@
 package com.squareup.kotlinpoet
 
 import com.google.common.truth.Truth.assertThat
-import org.junit.Test
+import com.squareup.kotlinpoet.ParameterizedTypeName.Companion.parameterizedBy
+import kotlin.test.Test
 
 class CodeBlockTest {
   @Test fun equalsAndHashCode() {
@@ -229,13 +230,13 @@ class CodeBlockTest {
     val typeBlock = CodeBlock.of("%T", type)
     assertThat(typeBlock.toString()).isEqualTo("kotlin.String?")
 
-    val list = ParameterizedTypeName.get(List::class.asClassName().asNullable(),
-        Int::class.asTypeName().asNullable()).asNullable()
+    val list = List::class.asClassName().asNullable()
+        .parameterizedBy(Int::class.asTypeName().asNullable()).asNullable()
     val listBlock = CodeBlock.of("%T", list)
     assertThat(listBlock.toString()).isEqualTo("kotlin.collections.List<kotlin.Int?>?")
 
-    val map = ParameterizedTypeName.get(Map::class.asClassName().asNullable(),
-        String::class.asTypeName().asNullable(), list).asNullable()
+    val map = Map::class.asClassName().asNullable()
+        .parameterizedBy(String::class.asTypeName().asNullable(), list).asNullable()
     val mapBlock = CodeBlock.of("%T", map)
     assertThat(mapBlock.toString())
         .isEqualTo("kotlin.collections.Map<kotlin.String?, kotlin.collections.List<kotlin.Int?>?>?")
@@ -397,5 +398,31 @@ class CodeBlockTest {
     val blocks = listOf(CodeBlock.of("%L", "taco1"), CodeBlock.of("%L", "taco2"), CodeBlock.of("%L", "taco3"))
     assertThat(blocks.joinToCode(prefix = "(", suffix = ")"))
         .isEqualTo(CodeBlock.of("(%L, %L, %L)", "taco1", "taco2", "taco3"))
+  }
+
+  @Test fun beginControlFlowWithParams() {
+    val controlFlow = CodeBlock.builder()
+        .beginControlFlow("list.forEach { element ->")
+        .addStatement("println(element)")
+        .endControlFlow()
+        .build()
+    assertThat(controlFlow.toString()).isEqualTo("""
+      |list.forEach { element ->
+      |    println(element)
+      |}
+      |""".trimMargin())
+  }
+
+  @Test fun beginControlFlowWithParamsAndTemplateString() {
+    val controlFlow = CodeBlock.builder()
+        .beginControlFlow("listOf(\"\${1.toString()}\").forEach { element ->")
+        .addStatement("println(element)")
+        .endControlFlow()
+        .build()
+    assertThat(controlFlow.toString()).isEqualTo("""
+      |listOf("${'$'}{1.toString()}").forEach { element ->
+      |    println(element)
+      |}
+      |""".trimMargin())
   }
 }

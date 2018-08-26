@@ -16,9 +16,9 @@
 package com.squareup.kotlinpoet
 
 import com.google.common.truth.Truth.assertThat
-import org.junit.Assert.assertEquals
+import kotlin.test.assertEquals
 
-import org.junit.Test
+import kotlin.test.Test
 
 class UtilTest {
   @Test fun characterLiteral() {
@@ -86,6 +86,13 @@ class UtilTest {
     assertThat("when".isIdentifier).isTrue()
     assertThat("fun".isIdentifier).isTrue()
     assertThat("".isIdentifier).isFalse()
+  }
+
+  @Test fun escapeNonJavaIdentifiers() {
+    assertThat(escapeIfNotJavaIdentifier("8startWithNumber")).isEqualTo("`8startWithNumber`")
+    assertThat(escapeIfNotJavaIdentifier("with-hyphen")).isEqualTo("`with-hyphen`")
+    assertThat(escapeIfNotJavaIdentifier("with space")).isEqualTo("`with space`")
+    assertThat(escapeIfNotJavaIdentifier("with_unicode_punctuation\u2026")).isEqualTo("`with_unicode_punctuation\u2026`")
   }
 
   private fun stringLiteral(string: String) = stringLiteral(string, string)

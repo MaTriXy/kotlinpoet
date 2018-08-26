@@ -24,6 +24,7 @@ import kotlin.reflect.KClass
 /** A generated parameter declaration.  */
 class ParameterSpec private constructor(builder: ParameterSpec.Builder) {
   val name = builder.name
+  val kdoc = builder.kdoc.build()
   val annotations = builder.annotations.toImmutableList()
   val modifiers = builder.modifiers.toImmutableSet()
   val type = builder.type
@@ -32,7 +33,7 @@ class ParameterSpec private constructor(builder: ParameterSpec.Builder) {
   internal fun emit(codeWriter: CodeWriter, includeType: Boolean = true) {
     codeWriter.emitAnnotations(annotations, true)
     codeWriter.emitModifiers(modifiers)
-    if (name.isNotEmpty()) codeWriter.emitCode("%L", escapeIfKeyword(name))
+    if (name.isNotEmpty()) codeWriter.emitCode("%L", escapeIfNecessary(name))
     if (name.isNotEmpty() && includeType) codeWriter.emit(": ")
     if (includeType) codeWriter.emitCode("%T", type)
     emitDefaultValue(codeWriter)
@@ -59,6 +60,7 @@ class ParameterSpec private constructor(builder: ParameterSpec.Builder) {
     val builder = Builder(name, type)
     builder.annotations += annotations
     builder.modifiers += modifiers
+    builder.defaultValue = defaultValue
     return builder
   }
 
@@ -66,9 +68,19 @@ class ParameterSpec private constructor(builder: ParameterSpec.Builder) {
     internal val name: String,
     internal val type: TypeName
   ) {
-    internal val annotations = mutableListOf<AnnotationSpec>()
-    internal val modifiers = mutableListOf<KModifier>()
     internal var defaultValue: CodeBlock? = null
+
+    val kdoc = CodeBlock.builder()
+    val annotations = mutableListOf<AnnotationSpec>()
+    val modifiers = mutableListOf<KModifier>()
+
+    fun addKdoc(format: String, vararg args: Any) = apply {
+      kdoc.add(format, *args)
+    }
+
+    fun addKdoc(block: CodeBlock) = apply {
+      kdoc.add(block)
+    }
 
     fun addAnnotations(annotationSpecs: Iterable<AnnotationSpec>) = apply {
       annotations += annotationSpecs
@@ -145,27 +157,28 @@ class ParameterSpec private constructor(builder: ParameterSpec.Builder) {
 
 internal fun List<ParameterSpec>.emit(
   codeWriter: CodeWriter,
+  forceNewLines: Boolean = false,
   emitBlock: (ParameterSpec) -> Unit = { it.emit(codeWriter) }
 ) = with(codeWriter) {
   val params = this@emit
   emit("(")
-  when (size) {
-    0 -> emit("")
-    1 -> emitBlock(params[0])
-    2 -> {
-      emitBlock(params[0])
-      emit(", ")
-      emitBlock(params[1])
-    }
-    else -> {
+  when {
+    size > 2 || forceNewLines -> {
       emit("\n")
-      indent(2)
+      indent(1)
       forEachIndexed { index, parameter ->
         if (index > 0) emit(",\n")
         emitBlock(parameter)
       }
-      unindent(2)
+      unindent(1)
       emit("\n")
+    }
+    size == 0 -> emit("")
+    size == 1 -> emitBlock(params[0])
+    size == 2 -> {
+      emitBlock(params[0])
+      emit(", ")
+      emitBlock(params[1])
     }
   }
   emit(")")

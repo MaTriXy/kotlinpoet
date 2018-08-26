@@ -21,9 +21,13 @@ import java.lang.reflect.Modifier
 import java.lang.reflect.ParameterizedType
 import java.lang.reflect.Type
 import kotlin.reflect.KClass
+import kotlin.reflect.KType
+import kotlin.reflect.KTypeParameter
+import kotlin.reflect.KTypeProjection
+import kotlin.reflect.KVariance
 
 class ParameterizedTypeName internal constructor(
-  private val enclosingType: ParameterizedTypeName?,
+  private val enclosingType: TypeName?,
   val rawType: ClassName,
   typeArguments: List<TypeName>,
   nullable: Boolean = false,
@@ -49,11 +53,18 @@ class ParameterizedTypeName internal constructor(
   override fun withoutAnnotations()
       = ParameterizedTypeName(enclosingType, rawType, typeArguments, nullable)
 
+  fun plusParameter(typeArgument: TypeName) = ParameterizedTypeName(enclosingType, rawType,
+      typeArguments + typeArgument, nullable, annotations)
+
+  fun plusParameter(typeArgument: KClass<*>) = plusParameter(typeArgument.asClassName())
+
+  fun plusParameter(typeArgument: Class<*>) = plusParameter(typeArgument.asClassName())
+
   override fun emit(out: CodeWriter): CodeWriter {
     if (enclosingType != null) {
       enclosingType.emitAnnotations(out)
       enclosingType.emit(out)
-      out.emit("." + rawType.simpleName())
+      out.emit("." + rawType.simpleName)
     } else {
       rawType.emitAnnotations(out)
       rawType.emit(out)
@@ -79,18 +90,29 @@ class ParameterizedTypeName internal constructor(
       = ParameterizedTypeName(this, rawType.nestedClass(name), typeArguments)
 
   companion object {
-    /** Returns a parameterized type, applying `typeArguments` to `rawType`.  */
-    @JvmStatic fun get(rawType: ClassName, vararg typeArguments: TypeName)
-        = ParameterizedTypeName(null, rawType, typeArguments.toList())
+    /** Returns a parameterized type, applying `typeArguments` to `this`.  */
+    @JvmStatic @JvmName("get") fun ClassName.parameterizedBy(vararg typeArguments: TypeName)
+        = ParameterizedTypeName(null, this, typeArguments.toList())
 
-    /** Returns a parameterized type, applying `typeArguments` to `rawType`.  */
-    @JvmStatic fun get(rawType: KClass<*>, vararg typeArguments: KClass<*>)
-        = ParameterizedTypeName(null, rawType.asClassName(),
-        typeArguments.map { it.asTypeName() })
+    /** Returns a parameterized type, applying `typeArguments` to `this`.  */
+    @JvmStatic @JvmName("get") fun KClass<*>.parameterizedBy(vararg typeArguments: KClass<*>)
+        = ParameterizedTypeName(null, asClassName(), typeArguments.map { it.asTypeName() })
 
-    /** Returns a parameterized type, applying `typeArguments` to `rawType`.  */
-    @JvmStatic fun get(rawType: Class<*>, vararg typeArguments: Type) = ParameterizedTypeName(
-        null, rawType.asClassName(), typeArguments.map { it.asTypeName() })
+    /** Returns a parameterized type, applying `typeArguments` to `this`.  */
+    @JvmStatic @JvmName("get") fun Class<*>.parameterizedBy(vararg typeArguments: Type) =
+        ParameterizedTypeName(null, asClassName(), typeArguments.map { it.asTypeName() })
+
+    /** Returns a parameterized type, applying `typeArgument` to `this`.  */
+    @JvmStatic @JvmName("get") fun ClassName.plusParameter(typeArgument: TypeName) =
+        parameterizedBy(typeArgument)
+
+    /** Returns a parameterized type, applying `typeArgument` to `this`.  */
+    @JvmStatic @JvmName("get") fun KClass<*>.plusParameter(typeArgument: KClass<*>) =
+        parameterizedBy(typeArgument)
+
+    /** Returns a parameterized type, applying `typeArgument` to `this`.  */
+    @JvmStatic @JvmName("get") fun Class<*>.plusParameter(typeArgument: Class<*>) =
+        parameterizedBy(typeArgument)
 
     /** Returns a parameterized type equivalent to `type`.  */
     internal fun get(
@@ -105,8 +127,35 @@ class ParameterizedTypeName internal constructor(
 
       val typeArguments = type.actualTypeArguments.map { TypeName.get(it, map = map) }
       return if (ownerType != null)
-        get(ownerType, map = map).nestedClass(rawType.simpleName(), typeArguments) else
+        get(ownerType, map = map).nestedClass(rawType.simpleName, typeArguments) else
         ParameterizedTypeName(null, rawType, typeArguments)
+    }
+
+    /** Returns a type name equivalent to type with given list of type arguments.  */
+    internal fun get(type: KClass<*>, nullable: Boolean, typeArguments: List<KTypeProjection>): TypeName {
+      if (typeArguments.isEmpty()) {
+        return type.asTypeName()
+      }
+
+      val effectiveType = if (type.java.isArray) Array<Unit>::class else type
+      val enclosingClass = type.java.enclosingClass?.kotlin
+
+      return ParameterizedTypeName(
+          enclosingClass?.let {
+            get(it, false, typeArguments.drop(effectiveType.typeParameters.size))
+          },
+          effectiveType.asTypeName(),
+          typeArguments.take(effectiveType.typeParameters.size).map { (paramVariance, paramType) ->
+            val typeName = paramType?.asTypeName() ?: return@map WildcardTypeName.STAR
+            when (paramVariance) {
+              null -> WildcardTypeName.STAR
+              KVariance.INVARIANT -> typeName
+              KVariance.IN -> WildcardTypeName.supertypeOf(typeName)
+              KVariance.OUT -> WildcardTypeName.subtypeOf(typeName)
+            }
+          },
+          nullable,
+          effectiveType.annotations.map { AnnotationSpec.get(it) })
     }
   }
 }
@@ -114,3 +163,17 @@ class ParameterizedTypeName internal constructor(
 /** Returns a parameterized type equivalent to `type`.  */
 @JvmName("get")
 fun ParameterizedType.asParameterizedTypeName() = ParameterizedTypeName.get(this, mutableMapOf())
+
+/** Returns a class name equivalent to given Kotlin KType.  */
+fun KType.asTypeName(): TypeName {
+  val classifier = this.classifier
+  if (classifier is KTypeParameter) {
+    return classifier.asTypeVariableName()
+  }
+
+  if (classifier == null || classifier !is KClass<*>) {
+    throw IllegalArgumentException("Cannot build TypeName for $this")
+  }
+
+  return ParameterizedTypeName.get(classifier, this.isMarkedNullable, this.arguments)
+}

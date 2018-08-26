@@ -22,6 +22,8 @@ import java.util.Collections
 import javax.lang.model.element.TypeParameterElement
 import javax.lang.model.type.TypeVariable
 import kotlin.reflect.KClass
+import kotlin.reflect.KTypeParameter
+import kotlin.reflect.KVariance
 
 class TypeVariableName private constructor(
   val name: String,
@@ -47,8 +49,12 @@ class TypeVariableName private constructor(
 
   fun withBounds(vararg bounds: TypeName) = withBounds(bounds.toList())
 
-  fun withBounds(bounds: List<TypeName>) =
-      TypeVariableName(name, this.bounds + bounds, variance, reified, nullable, annotations)
+  fun withBounds(bounds: List<TypeName>) = TypeVariableName(name,
+      (this.bounds + bounds).withoutImplicitBound(), variance, reified, nullable, annotations)
+
+  private fun List<TypeName>.withoutImplicitBound(): List<TypeName> {
+    return if (size == 1) this else filterNot { it == NULLABLE_ANY }
+  }
 
   fun reified(value: Boolean = true) =
       TypeVariableName(name, bounds, variance, value, nullable, annotations)
@@ -60,14 +66,17 @@ class TypeVariableName private constructor(
       require(variance == null || variance.isOneOf(KModifier.IN, KModifier.OUT)) {
         "$variance is an invalid variance modifier, the only allowed values are in and out!"
       }
-      // Strip java.lang.Object from bounds if it is present.
-      return TypeVariableName(name, bounds.filter { it != ANY }, variance)
+      require(bounds.isNotEmpty()) {
+        "$name has no bounds"
+      }
+      // Strip Any? from bounds if it is present.
+      return TypeVariableName(name, bounds, variance)
     }
 
     /** Returns type variable named `name` with `variance` and without bounds.  */
     @JvmStatic @JvmName("get") @JvmOverloads
     operator fun invoke(name: String, variance: KModifier? = null) =
-        TypeVariableName.of(name, emptyList(), variance)
+        TypeVariableName.of(name, listOf(NULLABLE_ANY), variance)
 
     /** Returns type variable named `name` with `variance` and `bounds`.  */
     @JvmStatic @JvmName("get") @JvmOverloads
@@ -145,4 +154,13 @@ fun TypeParameterElement.asTypeVariableName(): TypeVariableName {
   val name = simpleName.toString()
   val boundsTypeNames = bounds.map { it.asTypeName() }
   return TypeVariableName.of(name, boundsTypeNames, variance = null)
+}
+
+fun KTypeParameter.asTypeVariableName(): TypeVariableName {
+  return TypeVariableName.of(name, upperBounds.map { it.asTypeName() },
+      when(variance) {
+        KVariance.INVARIANT -> null
+        KVariance.IN -> KModifier.IN
+        KVariance.OUT -> KModifier.OUT
+      })
 }

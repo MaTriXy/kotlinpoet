@@ -96,22 +96,21 @@ class FileSpec private constructor(builder: FileSpec.Builder) {
 
     codeWriter.pushPackage(packageName)
 
-    val escapedPackageName = packageName.split('.')
-        .joinToString(".") { escapeIfKeyword(it) }
+    val escapedPackageName = escapeKeywords(packageName)
 
     if (escapedPackageName.isNotEmpty()) {
       codeWriter.emitCode("package %L\n", escapedPackageName)
       codeWriter.emit("\n")
     }
 
-    val imports = codeWriter.importedTypes().values
+    val imports = codeWriter.importedTypes.values
         .map { it.canonicalName }
         .filterNot { it in memberImports.keys }
         .plus(memberImports.map { it.value.toString() })
 
     if (imports.isNotEmpty()) {
       for (className in imports.toSortedSet()) {
-        codeWriter.emitCode("import %L", className)
+        codeWriter.emitCode("import %L", escapeKeywords(className))
         codeWriter.emit("\n")
       }
       codeWriter.emit("\n")
@@ -121,7 +120,7 @@ class FileSpec private constructor(builder: FileSpec.Builder) {
       if (index > 0) codeWriter.emit("\n")
       when (member) {
         is TypeSpec -> member.emit(codeWriter, null)
-        is FunSpec -> member.emit(codeWriter, null, setOf(KModifier.PUBLIC))
+        is FunSpec -> member.emit(codeWriter, null, setOf(KModifier.PUBLIC), true)
         is PropertySpec -> member.emit(codeWriter, setOf(KModifier.PUBLIC))
         is TypeAliasSpec -> member.emit(codeWriter)
         else -> throw AssertionError()
@@ -166,18 +165,20 @@ class FileSpec private constructor(builder: FileSpec.Builder) {
     builder.comment.add(comment)
     builder.members.addAll(this.members)
     builder.indent = indent
+    builder.memberImports.addAll(memberImports.values)
     return builder
   }
 
   class Builder internal constructor(
-    internal val packageName: String,
-    internal val name: String
+    val packageName: String,
+    val name: String
   ) {
-    internal val annotations = mutableListOf<AnnotationSpec>()
     internal val comment = CodeBlock.builder()
     internal val memberImports = sortedSetOf<Import>()
     internal var indent = DEFAULT_INDENT
     internal val members = mutableListOf<Any>()
+
+    val annotations = mutableListOf<AnnotationSpec>()
 
     init {
       require(name.isName) { "not a valid file name: $name" }
@@ -228,17 +229,16 @@ class FileSpec private constructor(builder: FileSpec.Builder) {
       members += typeAliasSpec
     }
 
-    fun addStaticImport(constant: Enum<*>)
-        = addStaticImport(
+    fun addImport(constant: Enum<*>) = addImport(
         (constant as java.lang.Enum<*>).getDeclaringClass().asClassName(), constant.name)
 
-    fun addStaticImport(`class`: Class<*>, vararg names: String)
-        = addStaticImport(`class`.asClassName(), *names)
+    fun addImport(`class`: Class<*>, vararg names: String)
+        = addImport(`class`.asClassName(), *names)
 
-    fun addStaticImport(`class`: KClass<*>, vararg names: String)
-        = addStaticImport(`class`.asClassName(), *names)
+    fun addImport(`class`: KClass<*>, vararg names: String)
+        = addImport(`class`.asClassName(), *names)
 
-    fun addStaticImport(className: ClassName, vararg names: String) = apply {
+    fun addImport(className: ClassName, vararg names: String) = apply {
       require(names.isNotEmpty()) { "names array is empty" }
       require("*" !in names) { "Wildcard imports are not allowed" }
       for (name in names) {
@@ -246,7 +246,7 @@ class FileSpec private constructor(builder: FileSpec.Builder) {
       }
     }
 
-    fun addStaticImport(packageName: String, vararg names: String) = apply {
+    fun addImport(packageName: String, vararg names: String) = apply {
       require(names.isNotEmpty()) { "names array is empty" }
       require("*" !in names) { "Wildcard imports are not allowed" }
       for (name in names) {
@@ -272,7 +272,15 @@ class FileSpec private constructor(builder: FileSpec.Builder) {
       this.indent = indent
     }
 
-    fun build() = FileSpec(this)
+    fun build(): FileSpec {
+      for (annotationSpec in annotations) {
+        if (annotationSpec.useSiteTarget != FILE) {
+          error(
+              "Use-site target ${annotationSpec.useSiteTarget} not supported for file annotations.")
+        }
+      }
+      return FileSpec(this)
+    }
   }
 
   companion object {

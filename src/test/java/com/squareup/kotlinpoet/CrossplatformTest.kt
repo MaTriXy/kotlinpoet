@@ -17,7 +17,8 @@
 package com.squareup.kotlinpoet
 
 import com.google.common.truth.Truth.assertThat
-import org.junit.Test
+import com.squareup.kotlinpoet.ParameterizedTypeName.Companion.parameterizedBy
+import kotlin.test.Test
 import java.util.concurrent.atomic.AtomicReference
 
 class CrossplatformTest {
@@ -48,7 +49,7 @@ class CrossplatformTest {
             .returns(Boolean::class)
             .build())
         .build()
-    val actualName = ParameterizedTypeName.get(AtomicReference::class.asTypeName(), expectTypeParam)
+    val actualName = AtomicReference::class.asTypeName().parameterizedBy(expectTypeParam)
     val actualSpec = TypeAliasSpec.builder(expectType, actualName)
         .addTypeVariable(expectTypeParam)
         .addModifiers(KModifier.ACTUAL)
@@ -62,7 +63,7 @@ class CrossplatformTest {
       |import java.util.concurrent.atomic.AtomicReference
       |import kotlin.Boolean
       |
-      |expect internal class AtomicRef<V>(value: V) {
+      |internal expect class AtomicRef<V>(value: V) {
       |    val value: V
       |
       |    fun get(): V
@@ -145,7 +146,7 @@ class CrossplatformTest {
     assertThrows<IllegalStateException> {
       TypeSpec.expectClassBuilder("AtomicRef")
           .addInitializerBlock(CodeBlock.of("println()"))
-    }.hasMessageThat().isEqualTo("EXPECT_CLASS can't have initializer blocks")
+    }.hasMessageThat().isEqualTo("expect CLASS can't have initializer blocks")
   }
 
   @Test fun expectFunctionBodyForbidden() {
@@ -154,6 +155,7 @@ class CrossplatformTest {
           .addFunction(FunSpec.builder("print")
               .addStatement("println()")
               .build())
+          .build()
     }.hasMessageThat().isEqualTo("functions in expect classes can't have bodies")
   }
 
