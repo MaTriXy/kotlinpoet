@@ -15,7 +15,7 @@ Here's a `HelloWorld` file:
 ```kotlin
 class Greeter(val name: String) {
   fun greet() {
-    println("Hello, $name")
+    println("""Hello, $name""")
   }
 }
 
@@ -37,7 +37,7 @@ val file = FileSpec.builder("", "HelloWorld")
             .initializer("name")
             .build())
         .addFunction(FunSpec.builder("greet")
-            .addStatement("println(%S)", "Hello, \$name")
+            .addStatement("println(%P)", "Hello, \$name")
             .build())
         .build())
     .addFunction(FunSpec.builder("main")
@@ -168,6 +168,71 @@ class HelloWorld {
 }
 ```
 
+### %P for String Templates
+
+`%S` also handles the escaping of dollar signs (`$`), to avoid inadvertent creation of string 
+templates, which may fail to compile in generated code:
+
+```kotlin
+val stringWithADollar = "Your total is " + "$" + "50"
+val funSpec = FunSpec.builder("printTotal")
+    .returns(String::class)
+    .addStatement("return %S", stringWithADollar)
+    .build()
+```
+
+produces:
+
+```kotlin
+fun printTotal(): String = "Your total is ${'$'}50"
+```
+
+If you need to generate string templates, use `%P`, which doesn't escape dollars:
+
+```kotlin
+val amount = 50
+val stringWithADollar = "Your total is " + "$" + "amount"
+val funSpec = FunSpec.builder("printTotal")
+    .returns(String::class)
+    .addStatement("return %P", stringWithADollar)
+    .build()
+```
+
+produces:
+
+```kotlin
+fun printTotal(): String = "Your total is $amount"
+```
+
+You can also use `CodeBlock`s as arguments to `%P`, which is handy when you need to reference
+importable types or members inside the string template:
+
+```kotlin
+val file = FileSpec.builder("com.example", "Digits")
+    .addFunction(FunSpec.builder("print")
+        .addParameter("digits", IntArray::class)
+        .addStatement("println(%P)", buildCodeBlock {
+          val contentToString = MemberName("kotlin.collections", "contentToString")
+          add("These are the digits: \${digits.%M()}", contentToString)
+        })
+        .build())
+    .build()
+println(file)
+```
+
+The snippet above will produce the following output, handling the imports properly:
+
+```kotlin
+package com.example
+
+import kotlin.IntArray
+import kotlin.collections.contentToString
+
+fun print(digits: IntArray) {
+    println("""These are the digits: ${digits.contentToString()}""")
+}
+```
+
 ### %T for Types
 
 KotlinPoet has rich built-in support for types, including automatic generation of `import`
@@ -241,6 +306,10 @@ val arrayList = ClassName("kotlin.collections", "ArrayList")
 val listOfHoverboards = list.parameterizedBy(hoverboard)
 val arrayListOfHoverboards = arrayList.parameterizedBy(hoverboard)
 
+val thing = ClassName("com.misc", "Thing")
+val array = ClassName("kotlin", "Array")
+val producerArrayOfThings = array.parameterizedBy(WildcardTypeName.producerOf(thing))
+
 val beyond = FunSpec.builder("beyond")
     .returns(listOfHoverboards)
     .addStatement("val result = %T()", arrayListOfHoverboards)
@@ -248,6 +317,11 @@ val beyond = FunSpec.builder("beyond")
     .addStatement("result += %T()", hoverboard)
     .addStatement("result += %T()", hoverboard)
     .addStatement("return result")
+    .build()
+
+val printThings = FunSpec.builder("printThings")
+    .addParameter("things", producerArrayOfThings)
+    .addStatement("println(things)")
     .build()
 ```
 
@@ -257,6 +331,8 @@ KotlinPoet will decompose each type and import its components where possible.
 package com.example.helloworld
 
 import com.mattel.Hoverboard
+import com.misc.Thing
+import kotlin.Array
 import kotlin.collections.ArrayList
 import kotlin.collections.List
 
@@ -268,11 +344,119 @@ class HelloWorld {
         result += Hoverboard()
         return result
     }
+
+    fun printThings(things: Array<out Thing>) {
+        println(things)
+    }
 }
 ```
 
-Note that due to a [bug](https://youtrack.jetbrains.com/issue/KT-15286), the IDE will not autocomplete the `parameterizedBy` or `plusParameter` extensions
-and you'll have to add the import statement manually to get those extensions.
+Note that due to a [bug](https://youtrack.jetbrains.com/issue/KT-15286), the IDE will not 
+autocomplete the `parameterizedBy` or `plusParameter` extensions and you'll have to add the import 
+statement manually to get those extensions.
+
+#### Nullable Types
+
+KotlinPoet supports nullable types. To convert a `TypeName` into its nullable counterpart, use the 
+`copy()` method with `nullable` parameter set to `true`:
+
+```kotlin
+val java = PropertySpec.builder("java", String::class.asTypeName().copy(nullable = true))
+    .mutable()
+    .addModifiers(KModifier.PRIVATE)
+    .initializer("null")
+    .build()
+
+val helloWorld = TypeSpec.classBuilder("HelloWorld")
+    .addProperty(java)
+    .addProperty("kotlin", String::class, KModifier.PRIVATE)
+    .build()
+```
+
+generates:
+
+```kotlin
+class HelloWorld {
+    private var java: String? = null
+
+    private val kotlin: String
+}
+```
+
+### %M for Members
+
+Similar to types, KotlinPoet has a special placeholder for **members** (functions and properties),
+which comes handy when your code needs to access top-level members and members declared inside
+objects. Use **`%M`** to reference members, pass an instance of `MemberName` as the argument for the
+placeholder, and KotlinPoet will handle imports automatically:
+
+```kotlin
+val createTaco = MemberName("com.squareup.tacos", "createTaco")
+val isVegan = MemberName("com.squareup.tacos", "isVegan")
+val file = FileSpec.builder("com.squareup.example", "TacoTest")
+    .addFunction(FunSpec.builder("main")
+        .addStatement("val taco = %M()", createTaco)
+        .addStatement("println(taco.%M)", isVegan)
+        .build())
+    .build()
+println(file)
+```
+
+The code above generates the following file:
+
+```kotlin
+package com.squareup.example
+
+import com.squareup.tacos.createTaco
+import com.squareup.tacos.isVegan
+
+fun main() {
+    val taco = createTaco()
+    println(taco.isVegan)
+}
+```
+
+As you can see, it's also possible to use `%M` to reference extension functions and properties. You 
+just need to make sure the member can be imported without simple name collisions, otherwise 
+importing will fail and the code generator output will not pass compilation. There's a way to work 
+around such cases though - use `FileSpec.addAliasedImport()` to create an alias for a clashing 
+`MemberName`:
+
+```kotlin
+val createTaco = MemberName("com.squareup.tacos", "createTaco")
+val createCake = MemberName("com.squareup.cakes", "createCake")
+val isTacoVegan = MemberName("com.squareup.tacos", "isVegan")
+val isCakeVegan = MemberName("com.squareup.cakes", "isVegan")
+val file = FileSpec.builder("com.squareup.example", "Test")
+    .addAliasedImport(isTacoVegan, "isTacoVegan")
+    .addAliasedImport(isCakeVegan, "isCakeVegan")
+    .addFunction(FunSpec.builder("main")
+        .addStatement("val taco = %M()", createTaco)
+        .addStatement("val cake = %M()", createCake)
+        .addStatement("println(taco.%M)", isTacoVegan)
+        .addStatement("println(cake.%M)", isCakeVegan)
+        .build())
+    .build()
+println(file)
+``` 
+
+KotlinPoet will produce an aliased import for `com.squareup.tacos2.isVegan`:
+
+```kotlin
+package com.squareup.example
+
+import com.squareup.cakes.createCake
+import com.squareup.tacos.createTaco
+import com.squareup.cakes.isVegan as isCakeVegan
+import com.squareup.tacos.isVegan as isTacoVegan
+
+fun main() {
+    val taco = createTaco()
+    val cake = createCake()
+    println(taco.isTacoVegan)
+    println(cake.isCakeVegan)
+}
+```
 
 ### %N for Names
 
@@ -310,6 +494,36 @@ val byteToHex = FunSpec.builder("byteToHex")
     .addStatement("result[1] = %N(b and 0xf)", hexDigit)
     .addStatement("return String(result)")
     .build()
+```
+
+Another handy feature that `%N` provides is automatically escaping names that contain illegal 
+identifier characters with double ticks. Suppose your code creates a `MemberName` with a Kotlin
+keyword as the simple name:
+
+```kotlin
+val taco = ClassName("com.squareup.tacos", "Taco")
+val packager = ClassName("com.squareup.tacos", "TacoPackager")
+val file = FileSpec.builder("com.example", "Test")
+    .addFunction(FunSpec.builder("packageTacos")
+        .addParameter("tacos", LIST.parameterizedBy(taco))
+        .addParameter("packager", packager)
+        .addStatement("packager.%N(tacos)", packager.member("package"))
+        .build())
+    .build()
+```
+
+`%N` will escape the name for you, ensuring that the output will pass compilation:
+
+```kotlin
+package com.example
+
+import com.squareup.tacos.Taco
+import com.squareup.tacos.TacoPackager
+import kotlin.collections.List
+
+fun packageTacos(tacos: List<Taco>, packager: TacoPackager) {
+  packager.`package`(tacos)
+}
 ```
 
 ### %L for Literals
@@ -369,7 +583,8 @@ val map = LinkedHashMap<String, Any>()
 map += "food" to "tacos"
 map += "count" to 3
 CodeBlock.builder().addNamed("I ate %count:L %food:L", map)
-  ```
+```
+  
 ### Functions
 
 All of the above functions have a code body. Use `KModifier.ABSTRACT` to get a function without any
@@ -415,6 +630,69 @@ Which outputs:
 ```kotlin
 fun Int.abs(): Int = if (this < 0) -this else this
 ```
+
+#### Default function arguments
+
+Consider the example below.
+Function argument `b` has a default value of 0 to avoid overloading this function.
+
+```kotlin
+fun add(a: Int, b: Int = 0) {
+  print("a + b = ${ a + b }")
+}
+```
+
+Use the `defaultValue()` builder function to declare default value for a function argument.
+
+```kotlin
+FunSpec.builder("add")
+    .addParameter("a", Int::class)
+    .addParameter(ParameterSpec.builder("b", Int::class)
+        .defaultValue("%L", 0)
+        .build())
+    .addStatement("print(\"a + b = ${ a + b }\")")
+    .build()
+```
+
+#### Spaces wrap by default!
+
+In order to provide meaningful formatting, KotlinPoet would replace spaces, found in blocks of code,
+with new line symbols, in cases when the line of code exceeds the length limit. Let's take this 
+function for example:
+
+```kotlin
+val funSpec = FunSpec.builder("foo")
+    .addStatement("return (100..10000).map { number -> number * number }.map { number -> number.toString() }.also { string -> println(string) }")
+    .build()
+```
+
+Depending on where it's found in the file, it may end up being printed out like this:
+
+```kotlin
+fun foo() = (100..10000).map { number -> number * number }.map { number -> number.toString() }.also 
+{ string -> println(string) }
+```
+
+Unfortunately this code is broken: the compiler expects `also` and `{` to be on the same line. 
+KotlinPoet is unable to understand the context of the expression and fix the formatting for you, but 
+there's a trick you can use to declare a non-breaking space - use the `·` symbol where you would 
+otherwise use a space. Let's apply this to our example:
+
+```kotlin
+val funSpec = FunSpec.builder("foo")
+    .addStatement("return (100..10000).map·{ number -> number * number }.map·{ number -> number.toString() }.also·{ string -> println(string) }")
+    .build()
+```
+
+This will now produce the following result:
+
+```kotlin
+fun foo() = (100..10000).map { number -> number * number }.map { number -> number.toString()
+}.also { string -> println(string) }
+```
+
+The code is now correct and will compile properly. It still doesn't look perfect - you can play with
+replacing other spaces in the code block with `·` symbols to achieve better formatting.
 
 ### Constructors
 
@@ -500,6 +778,7 @@ Declare parameters on methods and constructors with either `ParameterSpec.builde
 
 ```kotlin
 val android = ParameterSpec.builder("android", String::class)
+    .defaultValue("\"pie\"")
     .build()
 
 val welcomeOverlords = FunSpec.builder("welcomeOverlords")
@@ -508,11 +787,10 @@ val welcomeOverlords = FunSpec.builder("welcomeOverlords")
     .build()
 ```
 
-Though the code above to generate `android` and `robot` parameters is different, the output is the
-same:
+The code above generates:
 
 ```kotlin
-fun welcomeOverlords(android: String, robot: String) {
+fun welcomeOverlords(android: String = "pie", robot: String) {
 }
 ```
 
@@ -560,15 +838,93 @@ Which generates:
 private val android: String = "Oreo v." + 8.1
 ```
 
-By default `PropertySpec.Builder` produces `val` properties. Use `PropertySpec.varBuilder()` if you
-need a `var`:
+By default `PropertySpec.Builder` produces `val` properties. Use `mutable()` if you need a
+`var`:
 
 ```kotlin
-val android = PropertySpec.varBuilder("android", String::class)
+val android = PropertySpec.builder("android", String::class)
+    .mutable()
     .addModifiers(KModifier.PRIVATE)
     .initializer("%S + %L", "Oreo v.", 8.1)
     .build()
 ```
+
+#### Inline properties
+
+The way KotlinPoet models inline properties deserves special mention. The following snippet of code:
+
+```kotlin
+val android = PropertySpec.builder("android", String::class)
+    .addModifiers(KModifier.INLINE)
+    .build()
+```
+
+will produce an error:
+
+```
+java.lang.IllegalArgumentException: KotlinPoet doesn't allow setting the inline modifier on 
+properties. You should mark either the getter, the setter, or both inline.
+```
+
+Indeed, a property marked with `inline` should have at least one accessor which will be inlined by
+the compiler. Let's add a getter to this property:
+
+```kotlin
+val android = PropertySpec.builder("android", String::class)
+    .getter(FunSpec.getterBuilder()
+        .addModifiers(KModifier.INLINE)
+        .addStatement("return %S", "foo")
+        .build())
+    .build()
+```
+
+The result is the following:
+
+```kotlin
+val android: kotlin.String
+    inline get() = "foo"
+```
+
+Now, what if we wanted to add a non-inline setter to the property above? We can do so without 
+modifying any of the code we wrote previously:
+
+```kotlin
+val android = PropertySpec.builder("android", String::class)
+    .getter(FunSpec.getterBuilder()
+        .addModifiers(KModifier.INLINE)
+        .addStatement("return %S", "foo")
+        .build())
+    .setter(FunSpec.setterBuilder()
+        .addParameter("value", String::class)
+        .build())
+    .build()
+```
+
+We get the expected result:
+
+```kotlin
+val android: kotlin.String
+    inline get() = "foo"
+    set(value) {
+    }
+```
+
+Finally, if we go back and add `KModifier.INLINE` to the setter, KotlinPoet can wrap it nicely and
+produce the following result:
+
+```kotlin
+inline val android: kotlin.String
+    get() = "foo"
+    set(value) {
+    }
+```
+
+Removing the modifier from either the getter or the setter will unwrap the expression back. 
+
+If, on the other hand, KotlinPoet had allowed marking a property `inline` directly, the programmer 
+would have had to manually add/remove the modifier whenever the state of the accessors changes in 
+order to get correct and compilable output. We're solving this problem by making accessors the 
+source of truth for the `inline` modifier.  
 
 ### Interfaces
 
@@ -789,7 +1145,7 @@ val logRecord = FunSpec.builder("recordEvent")
     .addModifiers(KModifier.ABSTRACT)
     .addAnnotation(AnnotationSpec.builder(headerList)
         .addMember(
-            "[\n%>%L,\n%L%<\n]",
+            "[\n⇥%L,\n%L⇤\n]",
             AnnotationSpec.builder(header)
                 .addMember("name = %S", "Accept")
                 .addMember("value = %S", "application/json; charset=utf-8")
@@ -877,6 +1233,49 @@ typealias FileTable<K> = Map<K, Set<File>>
 typealias Predicate<T> = (T) -> Boolean
 ```
 
+### Callable References
+
+[Callable references](https://kotlinlang.org/docs/reference/reflection.html#callable-references) to
+constructors, functions, and properties may be emitted via:
+
+- `ClassName.constructorReference()` for constructors
+- `MemberName.reference()` for functions and properties
+
+For example,
+
+```kotlin
+val helloClass = ClassName("com.example.hello", "Hello")
+val worldFunction: MemberName = helloClass.member("world")
+val byeProperty: MemberName = helloClass.nestedClass("World").member("bye")
+
+val factoriesFun = FunSpec.builder("factories")
+    .addStatement("val hello = %L", helloClass.constructorReference())
+    .addStatement("val world = %L", worldFunction.reference())
+    .addStatement("val bye = %L", byeProperty.reference())
+    .build()
+
+FileSpec.builder("com.example", "HelloWorld")
+    .addFunction(factoriesFun)
+    .build()
+```
+
+would generate:
+
+```kotlin
+package com.example
+
+import com.example.hello.Hello
+
+fun factories() {
+  val hello = ::Hello
+  val world = Hello::world
+  val bye = Hello.World::bye
+}
+```
+
+Top-level classes and members with conflicting names may require aliased imports, as with
+[member names](#m-for-members).
+
 Download
 --------
 
@@ -886,14 +1285,14 @@ Download [the latest .jar][dl] or depend via Maven:
 <dependency>
   <groupId>com.squareup</groupId>
   <artifactId>kotlinpoet</artifactId>
-  <version>1.0.0-RC1</version>
+  <version>1.3.0</version>
 </dependency>
 ```
 
 or Gradle:
 
 ```groovy
-compile 'com.squareup:kotlinpoet:1.0.0-RC1'
+compile 'com.squareup:kotlinpoet:1.3.0'
 ```
 
 Snapshots of the development version are available in [Sonatype's `snapshots` repository][snap].
@@ -919,6 +1318,6 @@ License
 
  [dl]: https://search.maven.org/remote_content?g=com.squareup&a=kotlinpoet&v=LATEST
  [snap]: https://oss.sonatype.org/content/repositories/snapshots/com/squareup/kotlinpoet/
- [kdoc]: https://square.github.io/kotlinpoet/0.x/kotlinpoet/com.squareup.kotlinpoet/
+ [kdoc]: https://square.github.io/kotlinpoet/1.x/kotlinpoet/com.squareup.kotlinpoet/
  [javapoet]: https://github.com/square/javapoet/
  [formatter]: https://developer.android.com/reference/java/util/Formatter.html

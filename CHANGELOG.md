@@ -1,6 +1,128 @@
 Change Log
 ==========
 
+## Version 1.3.0
+
+_2019-05-30_
+
+ * New: Don't inline annotations in the primary constructor.
+ * New: Force new lines when emitting primary constructors.
+ * New: Support using MemberNames as arguments to %N.
+ * New: Add more ClassName constants: ClassName.STRING, ClassName.LIST, etc.
+ * New: Add ClassName.constructorReference() and MemberName.reference().
+ * New: Make %N accept MemberNames.
+ * New: Escape spaces in import aliases.
+ * New: Escape spaces in ClassNames.
+ * New: Escape spaces in MemberNames.
+ * New: Escape imports containing spaces.
+ * New: Escape package name containing spaces.
+ * New: Use 2-space indents.
+ * New: Only indent one level on annotation values.
+ * Fix: Pass only unique originating elements to Filer.
+ * Fix: Fix bug with MemberNames in same package nested inside a class.
+
+## Version 1.2.0
+
+_2019-03-28_
+ 
+ * New: Add writeTo(Filer) and originating element API.
+ * New: Make *Spec types taggable.
+ * New: Make FunSpec.Builder#addCode take vararg Any?.
+ * Fix: Import members from default package.
+ * Fix: Add non-wrapping spaces in control flow creation methods.
+ * Fix: Named "value" argument being omitted in annotation array types. 
+
+## Version 1.1.0
+
+_2019-02-28_
+
+ * New: Kotlin 1.3.21.
+ * New: Support referencing members using `%M` and `MemberName` type.
+ * New: Add extensions for getting a `MemberName` from a `ClassName`, `KClass` and `Class`.
+ * New: Allow passing `CodeBlock`s as arguments to `%P`.
+ * New: Allow interface delegation for objects.
+ * Fix: Don't emit visible whitespace in `toString()`.
+ * Fix: Prevent line wrapping in weird places inside function signature.
+ * Fix: No line wrapping between val and property name.
+ * Fix: Allow passing line prefix into `LineWrapper` to enable proper line wrapping in KDoc.
+ * Fix: Add newline for `TypeSpec` Kdoc with no tags.
+ * Fix: Add newline for remaining Specs.
+ * Fix: Fix kdoc formatting for property getter/setters.
+ * Fix: Don't wrap single line comments inside `FunSpec`.
+ * Fix: Add non-wrapping package name.
+ * Fix: Remove n^2 algorithm in `CodeWriter.resolve()` by precomputing all of the nested simple names of a `TypeSpec`.
+ * Fix: Fix edge case with empty enum classes.
+ * Fix: Fix Nullable Type Parameter handling in `KType.asTypeName()`.
+ * Fix: Fix incorrect long comment wrapping in `FileSpec`.
+ * Fix: Attach primary constructor param/property KDoc to the element vs emitting it inside the type header.
+
+## Version 1.0.1
+
+_2019-01-02_
+
+ * New: Allow enums without constants.
+ * New: Improved formatting of TypeSpec KDoc.
+ * New: Support @property and @param KDoc tags in TypeSpec.
+ * Fix: Use pre-formatted strings for arguments to %P.
+
+## Version 1.0.0
+
+_2018-12-10_
+
+ * New: Kotlin 1.3.11.
+ * Fix: Prevent wrapping in import statements.
+
+## Version 1.0.0-RC3
+
+_2018-11-28_
+
+ * New: Kotlin 1.3.10.
+ * New: Add `%P` placeholder for string templates.
+ * New: Add support for receiver kdoc.
+ * New: Avoid emitting `Unit` as return type.
+ * New: Add support for empty setters.
+ * New: Add checks for inline classes.
+ * New: Escape property and variable names if keywords.
+ * New: Replace `%>`, `%<`, `%[`, `%]` placeholders with `⇥`, `⇤`, `«`, `»`.
+ * New: Replace `%W` with space, and add `·` as a non-breaking space.
+ * New: Change `TypeName` to sealed class.
+ * New: Documentation improvements.
+ * New: Replace `TypeName` modifier methods with `copy()`.
+ * New: Rename members of `WildcardTypeName` to match with the producer/consumer generics model.
+ * New: Rename `TypeName.nullable` into `TypeName.isNullable`.
+ * New: Rename `LambdaTypeName.suspending` into `LambdaTypeName.isSuspending`.
+ * New: Rename `TypeVariableName.reified` into `TypeVariableName.isReified`.
+ * Fix: Emit star-projection only for types with `Any?` upper bound.
+ * Fix: Fold property with escaped name.
+
+## Version 1.0.0-RC2
+
+_2018-10-22_
+
+ * New: Kotlin 1.2.71.
+ * New: README improvements.
+ * New: Allow opening braces and params in `beginControlFlow()`.
+ * New: Add KDoc to `ParameterSpec`, collapse into parent KDoc.
+ * New: Support `TypeVariable`s in `PropertySpec`.
+ * New: Add parens for annotated types in `LambdaTypeName`.
+ * New: Improve error messaging and documentation for inline properties.
+ * New: Allow sealed classes to declare abstract properties.
+ * New: Added `buildCodeBlock()` helper function.
+ * New: Allow using `CodeBlock`s with statements as property initializers and default parameter values.
+ * New: Rename `NameAllocator.clone()` into `NameAllocator.copy().
+ * New: Rename `TypeName.asNonNullable()` to `TypeName.asNonNull()`.
+ * New: Remove `PropertySpec.varBuilder()` (use `mutable()` instead).
+ * New: Allow importing top-level members in default package.
+ * New: Add overloads to add KDoc to return type.
+ * Fix: Distinguishing `IntArray` and `Array<Int>` when creating `TypeName`.
+ * Fix: Use `TypeName` instead of `ClassName` as parameter type of `plusParameter()`.
+ * Fix: Keep type-parameter variance when constructing `TypeName` from `KType`.
+ * Fix: Don't validate modifiers when merging properties with primary constructor parameters.
+ * Fix: Escape $ characters in formatted strings.
+ * Fix: `FileSpec.Builder` blank package and subfolder fix.
+ * Fix: Append new line at end of parameter KDoc.
+ * Fix: Add parameter KDoc in `toBuilder()`.
+
 ## Version 1.0.0-RC1
 
 _2018-07-16_
