@@ -1,8 +1,10 @@
 .classpath
 .gradle
+.kotlin
 .project
 .settings
 eclipsebin
+local.properties
 
 bin
 gen
@@ -17,9 +19,7 @@ classes
 
 # Mkdocs files
 docs/1.x/*
-docs/changelog.md
-docs/contributing.md
-docs/index.md
+site
 
 obj
 

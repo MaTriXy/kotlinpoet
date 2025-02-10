@@ -5,7 +5,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ * https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -13,40 +13,107 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import org.jetbrains.dokka.gradle.DokkaTask
+import org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi
+import org.jetbrains.kotlin.gradle.targets.js.dsl.ExperimentalWasmDsl
 
 plugins {
-  kotlin("jvm")
-  id("org.jetbrains.dokka")
-  id("com.vanniktech.maven.publish") version versions.mavenPublish
+  kotlin("multiplatform")
 }
 
-val GROUP: String by project
-val VERSION_NAME: String by project
+spotless {
+  kotlin {
+    targetExclude(
+      // Non-Square licensed files
+      "src/*Main/kotlin/com/squareup/kotlinpoet/ClassName.kt",
+      "src/*Main/kotlin/com/squareup/kotlinpoet/ClassName.*.kt",
+      "src/*Test/kotlin/com/squareup/kotlinpoet/AbstractTypesTest.kt",
+      "src/*Test/kotlin/com/squareup/kotlinpoet/ClassNameTest.kt",
+      "src/*Test/kotlin/com/squareup/kotlinpoet/TypesEclipseTest.kt",
+      "src/*Test/kotlin/com/squareup/kotlinpoet/TypesTest.kt",
+    )
+  }
+}
 
-group = GROUP
-version = VERSION_NAME
+kotlin {
+  jvm {
+    withJava()
+  }
 
-tasks.named<Jar>("jar") {
+  js {
+    nodejs {
+      testTask {
+        useMocha()
+      }
+    }
+    binaries.library()
+  }
+
+  @OptIn(ExperimentalWasmDsl::class)
+  wasmJs {
+    nodejs {
+      testTask {
+        useMocha()
+      }
+    }
+    binaries.library()
+  }
+
+  @OptIn(ExperimentalKotlinGradlePluginApi::class)
+  compilerOptions {
+    allWarningsAsErrors = true
+    optIn.add("com.squareup.kotlinpoet.DelicateKotlinPoetApi")
+    freeCompilerArgs.add("-Xexpect-actual-classes")
+  }
+
+  sourceSets {
+    commonMain {
+      dependencies {
+        implementation(libs.kotlin.reflect)
+      }
+    }
+
+    commonTest {
+      dependencies {
+        implementation(kotlin("test"))
+      }
+    }
+
+    jvmTest {
+      dependencies {
+        implementation(libs.kotlin.junit)
+        implementation(libs.truth)
+        implementation(libs.guava)
+        implementation(libs.compileTesting)
+        implementation(libs.jimfs)
+        implementation(libs.ecj)
+        implementation(libs.kotlinCompileTesting)
+        implementation(libs.kotlin.annotationProcessingEmbeddable)
+        implementation(libs.kotlin.compilerEmbeddable)
+      }
+    }
+
+    val nonJvmMain by creating {
+      dependsOn(commonMain.get())
+    }
+
+    jsMain {
+      dependsOn(nonJvmMain)
+    }
+    wasmJsMain {
+      dependsOn(nonJvmMain)
+    }
+  }
+}
+
+tasks.withType(org.gradle.jvm.tasks.Jar::class.java) {
   manifest {
     attributes("Automatic-Module-Name" to "com.squareup.kotlinpoet")
   }
 }
 
-afterEvaluate {
-  tasks.named<DokkaTask>("dokka") {
-    skipDeprecated = true
-    outputDirectory = "$rootDir/docs/1.x"
-    outputFormat = "gfm"
+tasks.named<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>("compileTestKotlinJvm") {
+  compilerOptions {
+    freeCompilerArgs.add("-opt-in=com.squareup.kotlinpoet.DelicateKotlinPoetApi")
   }
 }
 
-dependencies {
-  api(deps.kotlin.stdlib)
-  implementation(deps.kotlin.reflect)
-  testImplementation(deps.kotlin.junit)
-  testImplementation(deps.test.truth)
-  testImplementation(deps.test.compileTesting)
-  testImplementation(deps.test.jimfs)
-  testImplementation(deps.test.ecj)
-}
